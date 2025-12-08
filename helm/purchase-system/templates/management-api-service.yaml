@@ -1,0 +1,23 @@
+# Management API Service
+#
+# Provides network endpoint for HTTP GET requests from web-server.
+# Kafka consumer doesn't need Service (outbound connection),
+# but HTTP endpoint does (web-server → management-api).
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.managementApi.name }}
+  labels:
+    {{- include "purchase-system.labels" . | nindent 4 }}
+    app: {{ .Values.managementApi.name }}
+spec:
+  type: {{ .Values.managementApi.service.type }}
+  ports:
+    - port: {{ .Values.managementApi.service.port }}
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "purchase-system.selectorLabels" . | nindent 4 }}
+    app: {{ .Values.managementApi.name }}

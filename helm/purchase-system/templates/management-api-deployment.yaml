@@ -1,0 +1,109 @@
+# Management API Deployment - FastAPI + Kafka consumer
+#
+# KEDA Autoscaling:
+# KEDA monitors Kafka consumer lag and dynamically adjusts replica count.
+# See keda-scaledobject.yaml for scaling configuration.
+#
+# Kafka Consumer Groups:
+# Multiple replicas join the same consumer group, and Kafka distributes
+# partitions among them. Optimal scaling matches partition count
+# (e.g., 3 partitions = 3 replicas for 1:1 distribution).
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.managementApi.name }}
+  labels:
+    {{- include "purchase-system.labels" . | nindent 4 }}
+    app: {{ .Values.managementApi.name }}
+spec:
+  # Note: For Kafka consumers, replica count is limited by partition count
+  # More replicas than partitions = idle consumers
+  # When KEDA is enabled, it manages replicas via ScaledObject - don't set replicas here
+  # to avoid conflicts during Helm upgrades
+  {{- if not .Values.keda.enabled }}
+  replicas: {{ .Values.managementApi.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 3  # Keep last 3 ReplicaSets for rollback
+
+  selector:
+    matchLabels:
+      {{- include "purchase-system.selectorLabels" . | nindent 6 }}
+      app: {{ .Values.managementApi.name }}
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  template:
+    metadata:
+      labels:
+        {{- include "purchase-system.selectorLabels" . | nindent 8 }}
+        app: {{ .Values.managementApi.name }}
+      annotations:
+        # Note: checksum/config annotation triggers pod restart on ConfigMap change
+        # Without this, pods would continue running with old config even after ConfigMap update
+        # Hash changes → pod template changes → rolling update triggered
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+
+    spec:
+      # Security context for pod-level settings
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000  # appuser from Dockerfile
+        fsGroup: 1000
+
+      containers:
+        - name: {{ .Values.managementApi.name }}
+          image: "{{ .Values.managementApi.image.repository }}:{{ .Values.managementApi.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+
+          # Security context for container-level settings
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false  # Python needs tmp for __pycache__
+
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+              name: http
+
+          # Environment variables from multiple sources
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-config
+
+          # MongoDB credentials from Secret
+          env:
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-mongodb-secret
+                  key: mongodb-uri
+
+          resources:
+            {{- toYaml .Values.managementApi.resources | nindent 12 }}
+
+          livenessProbe:
+            {{- toYaml .Values.managementApi.livenessProbe | nindent 12 }}
+
+          readinessProbe:
+            {{- toYaml .Values.managementApi.readinessProbe | nindent 12 }}
+
+      # Note: Pod anti-affinity for high availability
+      # Spreads replicas across different nodes so node failure doesn't take down all replicas
+      # Using "preferred" (soft rule) not "required" - won't block scheduling if nodes unavailable
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: {{ .Values.managementApi.name }}
+                topologyKey: kubernetes.io/hostname

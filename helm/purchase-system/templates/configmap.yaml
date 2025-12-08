@@ -1,0 +1,35 @@
+# ConfigMap - Application configuration
+#
+# Contains environment variables for all application pods.
+# Pods consume this via envFrom in their deployment specs.
+#
+# Note: ConfigMap changes don't automatically restart pods.
+# The checksum/config annotation in deployments triggers rolling updates
+# when this ConfigMap changes.
+#
+# Cross-namespace communication: Uses full DNS names to reference
+# infrastructure services in other namespaces (kafka, mongodb).
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels:
+    {{- include "purchase-system.labels" . | nindent 4 }}
+data:
+  # Kafka configuration
+  # Note: Full DNS name for cross-namespace communication
+  # Format: <service>.<namespace>.svc.cluster.local:<port>
+  KAFKA_BOOTSTRAP_SERVERS: {{ .Values.kafka.bootstrapServers | quote }}
+  KAFKA_TOPIC: {{ .Values.kafka.topic | quote }}
+  KAFKA_CONSUMER_GROUP: {{ .Values.kafka.consumerGroup | quote }}
+
+  # MongoDB configuration
+  # Note: MONGODB_URI comes from Secret for security
+  # Only non-sensitive config here
+  MONGODB_DATABASE: {{ .Values.mongodb.database | quote }}
+
+  # Service URLs (within same namespace - short DNS names work)
+  # Note: Within purchase-system namespace, we can use short names
+  # web-server:8000 instead of web-server.purchase-system.svc.cluster.local:8000
+  MANAGEMENT_API_URL: "http://{{ .Values.managementApi.name }}:{{ .Values.managementApi.service.port }}"

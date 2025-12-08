@@ -1,0 +1,20 @@
+# frontend-service.yaml
+#
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.frontend.name }}
+  labels:
+    {{- include "purchase-system.labels" . | nindent 4 }}
+    app: {{ .Values.frontend.name }}
+spec:
+  type: {{ .Values.frontend.service.type }}
+  ports:
+    - port: {{ .Values.frontend.service.port }}
+      targetPort: 80
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "purchase-system.selectorLabels" . | nindent 4 }}
+    app: {{ .Values.frontend.name }}

@@ -1,0 +1,60 @@
+# Kafka configuration using Strimzi Operator
+#
+# Uses KRaft mode (Kafka Raft) consensus protocol instead of ZooKeeper.
+# Strimzi 0.46+ requires KRaft - simpler architecture with better performance.
+#
+# KafkaNodePool defines Kafka nodes with combined broker and controller roles.
+# Version 4.0.0 is required by latest Strimzi operator.
+
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaNodePool
+metadata:
+  name: broker
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  replicas: 1
+  roles:
+    - broker      # Handles client connections and data
+    - controller  # Handles cluster metadata (replaces ZooKeeper)
+  storage:
+    type: ephemeral  # Data lost on pod restart (OK for dev/demo)
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: kafka
+  namespace: kafka
+  annotations:
+    strimzi.io/kraft: enabled        # Enable KRaft mode (no ZooKeeper)
+    strimzi.io/node-pools: enabled   # Use KafkaNodePool resources
+spec:
+  kafka:
+    version: 4.0.0
+    metadataVersion: 4.0-IV0  # KRaft metadata version
+
+    # Listeners define how clients connect
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal  # Only accessible within Kubernetes
+        tls: false      # No encryption (OK for dev)
+
+    # Kafka broker configuration
+    config:
+      # Replication settings (all 1 for single broker)
+      offsets.topic.replication.factor: 1
+      transaction.state.log.replication.factor: 1
+      transaction.state.log.min.isr: 1
+      default.replication.factor: 1
+      min.insync.replicas: 1
+
+      # Topic settings
+      num.partitions: 3              # Default partitions for new topics
+      auto.create.topics.enable: true # Auto-create topics when first used
+
+  # Entity Operator manages topics and users via Kubernetes CRDs
+  entityOperator:
+    topicOperator: {}  # Manages KafkaTopic resources
+    userOperator: {}   # Manages KafkaUser resources

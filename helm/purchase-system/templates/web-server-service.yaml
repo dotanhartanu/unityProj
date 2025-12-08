@@ -1,0 +1,28 @@
+# Web Server Service
+#
+# Provides stable network endpoint for web-server pods.
+# Service types: ClusterIP (internal), NodePort (node IP), LoadBalancer (cloud LB)
+# Using ClusterIP since access is through Ingress only.
+#
+# Service selector matches pod labels - Kubernetes automatically updates Endpoints.
+# Separate file from Deployment allows independent lifecycle management.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.webServer.name }}
+  labels:
+    {{- include "purchase-system.labels" . | nindent 4 }}
+    app: {{ .Values.webServer.name }}
+spec:
+  type: {{ .Values.webServer.service.type }}
+  ports:
+    - port: {{ .Values.webServer.service.port }}
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  # Note: This selector matches labels in web-server-deployment.yaml
+  # Service routes traffic to any pod with these labels
+  selector:
+    {{- include "purchase-system.selectorLabels" . | nindent 4 }}
+    app: {{ .Values.webServer.name }}

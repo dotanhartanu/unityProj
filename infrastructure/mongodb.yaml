@@ -1,0 +1,54 @@
+# MongoDB configuration using MongoDB Community Operator
+#
+# Official operator from MongoDB Inc. with better production support.
+# Deployed as single-member ReplicaSet for consistent API and easy scaling.
+#
+# Security: Using simple password for development.
+# Production should use external secret management (Vault, AWS Secrets Manager)
+# and enable TLS/SSL for encryption in transit.
+
+---
+# Secret for MongoDB admin password
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mongodb-admin-password
+  namespace: mongodb
+type: Opaque
+stringData:
+  password: password  # Note: Use secret management in production
+---
+# MongoDB cluster definition
+apiVersion: mongodbcommunity.mongodb.com/v1
+kind: MongoDBCommunity
+metadata:
+  name: mongodb
+  namespace: mongodb
+spec:
+  members: 1  # Single-member replica set (for dev)
+  type: ReplicaSet
+  version: "6.0.5"
+
+  # Security configuration
+  security:
+    authentication:
+      modes: ["SCRAM"]  # SCRAM-SHA-256 authentication
+
+  # Admin user with full permissions
+  users:
+    - name: admin
+      db: admin  # Admin database
+      passwordSecretRef:
+        name: mongodb-admin-password
+      roles:
+        - name: clusterAdmin
+          db: admin
+        - name: userAdminAnyDatabase
+          db: admin
+        - name: readWriteAnyDatabase  # Can read/write all databases
+          db: admin
+      scramCredentialsSecretName: admin-scram
+
+  # MongoDB configuration options
+  additionalMongodConfig:
+    storage.wiredTiger.engineConfig.journalCompressor: zlib  # Compress journal files

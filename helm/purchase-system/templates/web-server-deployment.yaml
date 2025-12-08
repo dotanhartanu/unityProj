@@ -1,0 +1,93 @@
+# Web Server Deployment - FastAPI web server
+#
+# Rolling update strategy gradually replaces old pods with new ones:
+# - maxSurge: Extra pods during update (e.g., 25% = can have 125% of desired)
+# - maxUnavailable: Pods that can be down (e.g., 25% = at least 75% running)
+# Setting maxUnavailable=0 ensures zero-downtime deployments.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.webServer.name }}
+  labels:
+    {{- include "purchase-system.labels" . | nindent 4 }}
+    app: {{ .Values.webServer.name }}
+spec:
+  replicas: {{ .Values.webServer.replicaCount }}
+  revisionHistoryLimit: 3  # Keep last 3 ReplicaSets for rollback
+
+  # Selector must match pod template labels
+  selector:
+    matchLabels:
+      {{- include "purchase-system.selectorLabels" . | nindent 6 }}
+      app: {{ .Values.webServer.name }}
+
+  # Rolling update strategy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Zero-downtime: always have all replicas available
+
+  template:
+    metadata:
+      labels:
+        {{- include "purchase-system.selectorLabels" . | nindent 8 }}
+        app: {{ .Values.webServer.name }}
+      # Note: Adding configmap hash to annotations forces pod restart on config change
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+
+    spec:
+      # Security context for pod-level settings
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000  # appuser from Dockerfile
+        fsGroup: 1000
+
+      containers:
+        - name: {{ .Values.webServer.name }}
+          image: "{{ .Values.webServer.image.repository }}:{{ .Values.webServer.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+
+          # Security context for container-level settings
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false  # Python needs tmp for __pycache__
+
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+              name: http
+
+          # Environment from ConfigMap
+          # Note: envFrom loads all ConfigMap keys as env vars
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-config
+
+          # Resource management
+          resources:
+            {{- toYaml .Values.webServer.resources | nindent 12 }}
+
+          # Health probes
+          livenessProbe:
+            {{- toYaml .Values.webServer.livenessProbe | nindent 12 }}
+
+          readinessProbe:
+            {{- toYaml .Values.webServer.readinessProbe | nindent 12 }}
+
+      # Note: Pod anti-affinity spreads pods across nodes
+      # Improves availability - node failure doesn't take down all replicas
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: {{ .Values.webServer.name }}
+                topologyKey: kubernetes.io/hostname

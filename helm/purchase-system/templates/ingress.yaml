@@ -1,0 +1,54 @@
+# Ingress - External access configuration
+#
+# Routes external HTTP traffic to the cluster via Layer 7 (application layer).
+# Ingress provides path/host-based routing with a single load balancer,
+# more cost-effective than multiple LoadBalancer services.
+#
+# Ingress Controller:
+# Ingress is an API object - the controller (nginx, Traefik, ALB) implements it.
+# k3d comes with Traefik controller by default.
+#
+# Traffic Flow:
+# User → Ingress (purchase.localhost) → Frontend Service → Frontend Pods
+# Frontend nginx then proxies /api/* to web-server service internally.
+#
+# Architecture Pattern:
+# Single entry point through frontend provides:
+# - Static file serving (HTML, CSS, JS)
+# - API proxying to backend services
+# - No CORS issues (same origin)
+# - Option to add caching, rate limiting at nginx layer
+
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-ingress
+  labels:
+    {{- include "purchase-system.labels" . | nindent 4 }}
+spec:
+  # Ingress class determines which controller handles this
+  # Note: k3d comes with Traefik by default
+  # In production: nginx, ALB, etc.
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          # Route all traffic to frontend
+          # Frontend nginx handles:
+          # - / → static files (HTML, CSS, JS)
+          # - /api/* → proxies to web-server service
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.frontend.name }}
+                port:
+                  number: {{ .Values.frontend.service.port }}
+  # Note: For production, add TLS:
+  # tls:
+  #   - hosts:
+  #       - purchase.example.com
+  #     secretName: purchase-tls
+{{- end }}

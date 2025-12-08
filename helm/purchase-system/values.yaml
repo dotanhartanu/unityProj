@@ -1,0 +1,214 @@
+# Helm Values - Default configuration values
+#
+# values.yaml provides template inputs at install time, which can generate
+# runtime configurations like ConfigMaps in the cluster.
+#
+# Namespace Strategy:
+# Application deployed to 'purchase-system' namespace.
+# Infrastructure in separate namespaces (kafka, mongodb, keda).
+# Cross-namespace communication uses full DNS names.
+
+# Global settings
+global:
+  # Image pull policy
+  # Note:
+  # - Always: Always pull (good for :latest tags)
+  # - IfNotPresent: Use local if exists (faster, good for versioned tags)
+  # - Never: Only use local (for local development)
+  imagePullPolicy: IfNotPresent
+
+# Frontend (Nginx) configuration
+frontend:
+  name: frontend
+  replicaCount: 1  # Single replica for now - nginx is lightweight
+
+  image:
+    repository: dotanhartanu/purchase-frontend
+    tag: latest
+
+  # Resource requests and limits
+  # Note: Nginx is lightweight, needs minimal resources
+  resources:
+    requests:
+      cpu: 50m       # 0.05 CPU cores
+      memory: 64Mi   # 64 MB
+    limits:
+      cpu: 200m      # 0.2 CPU cores
+      memory: 128Mi  # 128 MB
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  # Health check configuration
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 80
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 80
+    initialDelaySeconds: 3
+    periodSeconds: 5
+    failureThreshold: 3
+
+# Web Server configuration
+webServer:
+  name: web-server
+  replicaCount: 2
+
+  image:
+    repository: dotanhartanu/purchase-web-server
+    tag: latest
+
+  # Resource requests and limits
+  # Note: Critical for production!
+  # - requests: Minimum guaranteed resources (used for scheduling)
+  # - limits: Maximum allowed (container killed if exceeded for memory)
+  #
+  # Without limits, containers can starve other pods and prevent proper scheduling.
+  # Determine values through load testing and monitoring in staging.
+  resources:
+    requests:
+      cpu: 100m      # 0.1 CPU cores
+      memory: 128Mi  # 128 MB
+    limits:
+      cpu: 500m      # 0.5 CPU cores
+      memory: 256Mi  # 256 MB
+
+  service:
+    type: ClusterIP
+    port: 8000
+
+  # Health check configuration
+  # Note: Separate liveness and readiness probes serve different purposes:
+  # - liveness: Is container alive? Restart if failing.
+  # - readiness: Can it serve traffic? Remove from service if failing.
+  #
+  # Using identical probes may cause unnecessary restarts for downstream issues.
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    failureThreshold: 3
+
+# Management API configuration
+managementApi:
+  name: management-api
+  replicaCount: 2
+
+  image:
+    repository: dotanhartanu/purchase-management-api
+    tag: latest
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  service:
+    type: ClusterIP
+    port: 8000
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 15  # Longer: needs Kafka connection
+    periodSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    failureThreshold: 3
+
+# Kafka configuration (references infrastructure in kafka namespace)
+# Note: Using Strimzi Kafka Operator
+# - Creates bootstrap service: kafka-kafka-bootstrap
+# - Full DNS name for cross-namespace communication
+# Format: <service>.<namespace>.svc.cluster.local:<port>
+kafka:
+  bootstrapServers: kafka-kafka-bootstrap.kafka.svc.cluster.local:9092
+  topic: purchases
+  consumerGroup: management-api-group
+
+# MongoDB configuration (references infrastructure in mongodb namespace)
+# Note: Using MongoDB Community Operator
+# - Creates headless service: mongodb-svc
+# - Replica set member: mongodb-0
+# - Using directConnection for single-member replica set
+# Security: Password now stored in Secret, not plaintext in values.yaml
+mongodb:
+  password: password  # Override with --set mongodb.password=<secure-password>
+  database: purchases_db
+  host: mongodb-0.mongodb-svc.mongodb.svc.cluster.local:27017
+
+# KEDA Autoscaling configuration
+# Note: KEDA extends K8s HPA with external metrics
+keda:
+  enabled: true
+
+  # Scale based on Kafka consumer lag
+  # Note: Consumer lag = messages in topic - consumed messages
+  # High lag means consumer can't keep up → scale up
+  kafka:
+    lagThreshold: 10      # Scale up when lag > 10 messages per partition
+    consumerGroup: management-api-group
+    topic: purchases
+    # IMPORTANT: Must reference Strimzi Kafka bootstrap service
+    bootstrapServers: kafka-kafka-bootstrap.kafka.svc.cluster.local:9092
+
+  # Scaling bounds
+  # Note: Why minReplicaCount > 0?
+  # - With 0: Scale to zero when no messages (saves resources)
+  # - With 1+: Always have consumer running (no cold start)
+  # For this use case, keep 1 minimum to avoid missing messages
+  #
+  # Note: Why maxReplicaCount: 3?
+  # - We have 3 Kafka partitions (configured in install-dependencies.sh)
+  # - Kafka distributes partitions among consumers in same group
+  # - More replicas than partitions = idle consumers (waste of resources)
+  # - 3 replicas = optimal (1 consumer per partition)
+  minReplicaCount: 1
+  maxReplicaCount: 3
+
+  # Cooldown periods prevent thrashing (rapid scale up/down)
+  # Note:
+  # - pollingInterval: How often KEDA checks metrics
+  # - cooldownPeriod: Wait time before scaling down after scale up
+  pollingInterval: 15
+  cooldownPeriod: 60
+
+# Ingress configuration (for external access)
+# Note: Ingress routes external traffic to frontend service
+# Frontend nginx then proxies /api/* to web-server service
+ingress:
+  enabled: true
+  className: traefik  # k3d default ingress controller
+  host: purchase.localhost
+  # For production: use real domain and TLS
+  # tls:
+  #   enabled: true
+  #   secretName: purchase-tls

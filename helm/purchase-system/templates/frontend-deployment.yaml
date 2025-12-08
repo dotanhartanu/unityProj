@@ -1,0 +1,81 @@
+# frontend-deployment.yaml - Nginx frontend
+#
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.frontend.name }}
+  labels:
+    {{- include "purchase-system.labels" . | nindent 4 }}
+    app: {{ .Values.frontend.name }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  revisionHistoryLimit: 3  # Keep last 3 ReplicaSets for rollback
+
+  # Selector must match pod template labels
+  selector:
+    matchLabels:
+      {{- include "purchase-system.selectorLabels" . | nindent 6 }}
+      app: {{ .Values.frontend.name }}
+
+  # Rolling update strategy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Zero-downtime: always have all replicas available
+
+  template:
+    metadata:
+      labels:
+        {{- include "purchase-system.selectorLabels" . | nindent 8 }}
+        app: {{ .Values.frontend.name }}
+
+    spec:
+      containers:
+        - name: {{ .Values.frontend.name }}
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+
+          # Security context for container-level settings
+          # Note: nginx alpine image runs as root by default
+          # For production, consider using nginxinc/nginx-unprivileged
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - SETGID
+                - SETUID
+                - DAC_OVERRIDE  # nginx needs these for configuration
+
+          ports:
+            - containerPort: 80
+              protocol: TCP
+              name: http
+
+          # Resource management
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+
+          # Health probes
+          livenessProbe:
+            {{- toYaml .Values.frontend.livenessProbe | nindent 12 }}
+
+          readinessProbe:
+            {{- toYaml .Values.frontend.readinessProbe | nindent 12 }}
+
+      # Note: Pod anti-affinity spreads pods across nodes
+      # Improves availability - node failure doesn't take down all replicas
+      # Commented out for single-replica deployment
+      # affinity:
+      #   podAntiAffinity:
+      #     preferredDuringSchedulingIgnoredDuringExecution:
+      #       - weight: 100
+      #         podAffinityTerm:
+      #           labelSelector:
+      #             matchLabels:
+      #               app: {{ .Values.frontend.name }}
+      #           topologyKey: kubernetes.io/hostname

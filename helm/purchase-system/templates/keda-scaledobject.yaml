@@ -1,0 +1,57 @@
+# KEDA ScaledObject - Event-driven autoscaling configuration
+#
+# KEDA extends Kubernetes HPA with 50+ external scalers including Kafka.
+# Monitors Kafka consumer lag and scales management-api pods dynamically.
+#
+# Consumer lag = (latest offset) - (committed offset)
+# High lag indicates messages piling up faster than consumption.
+#
+# minReplicaCount: 1 keeps a consumer always running (no cold start)
+# maxReplicaCount: 3 matches Kafka partition count (optimal distribution)
+#
+# KEDA operator queries Kafka directly via admin API for lag metrics.
+
+{{- if .Values.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Values.managementApi.name }}-scaledobject
+  labels:
+    {{- include "purchase-system.labels" . | nindent 4 }}
+spec:
+  # Target deployment to scale
+  scaleTargetRef:
+    name: {{ .Values.managementApi.name }}
+
+  # Scaling bounds
+  # Min 1: Always have consumer running (no cold start delay)
+  # Max 3: Matches Kafka partition count for optimal distribution
+  minReplicaCount: {{ .Values.keda.minReplicaCount }}
+  maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
+
+  # Metric polling frequency (seconds)
+  pollingInterval: {{ .Values.keda.pollingInterval }}
+
+  # Cooldown before scaling down (prevents rapid scale up/down thrashing)
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
+
+  triggers:
+    - type: kafka
+      metadata:
+        # Kafka connection (full DNS for cross-namespace communication)
+        bootstrapServers: {{ .Values.keda.kafka.bootstrapServers }}
+
+        # Consumer group to monitor for lag
+        consumerGroup: {{ .Values.keda.kafka.consumerGroup }}
+
+        # Kafka topic
+        topic: {{ .Values.keda.kafka.topic }}
+
+        # Lag threshold per partition triggers scaling
+        # Formula: desiredReplicas = totalLag / (numPartitions × lagThreshold)
+        # Example: 60 msg lag, 3 partitions, threshold 10 → 2 replicas
+        lagThreshold: "{{ .Values.keda.kafka.lagThreshold }}"
+
+        # Offset reset policy
+        offsetResetPolicy: earliest
+{{- end }}

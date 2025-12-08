@@ -1,0 +1,29 @@
+# Helm Chart Metadata
+#
+# Version vs AppVersion:
+# - version: Chart version (increment when chart structure changes)
+# - appVersion: Application version (your app's version)
+# These can change independently.
+#
+# No Dependencies:
+# Infrastructure (Kafka, MongoDB, KEDA) is managed separately - production best practice:
+# - Different lifecycle (infra changes rarely, app changes often)
+# - Different ownership (platform team vs dev team)
+# - Reusable infrastructure (multiple apps can share Kafka)
+# - Different namespaces (kafka, mongodb, keda vs purchase-system)
+#
+# Namespace:
+# Installs to purchase-system namespace (created with --create-namespace flag).
+# Infrastructure lives in separate namespaces (kafka, mongodb, keda).
+
+apiVersion: v2
+name: purchase-system
+description: Unity DevOps Assignment - Purchase tracking system (application only)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+# No dependencies - infrastructure installed separately via scripts/install-dependencies.sh
+# Infrastructure services accessed via cross-namespace DNS:
+# - kafka.kafka.svc.cluster.local:9092
+# - mongodb.mongodb.svc.cluster.local:27017
