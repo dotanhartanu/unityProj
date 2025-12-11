@@ -58,6 +58,54 @@ This directory contains Kubernetes manifest files for infrastructure components 
 
 ---
 
+### `prometheus.yaml` - Prometheus ServiceMonitors
+
+**What it provides:**
+- ServiceMonitor custom resources for Prometheus Operator
+- Automatic service discovery and metrics scraping
+- Monitoring configuration for application and infrastructure
+
+**Configuration:**
+- **ServiceMonitors**:
+  - `purchase-system-monitor`: Monitors application services with label `monitoring: "true"`
+  - `kafka-monitor`: Monitors Kafka metrics via Strimzi exporter
+  - `mongodb-monitor`: Monitors MongoDB metrics via MongoDB exporter
+- **Scrape Interval**: 30 seconds
+- **Namespace**: `monitoring`
+
+**Services Monitored:**
+- Purchase system application pods (web-server, management-api, frontend)
+- Kafka broker metrics
+- MongoDB database metrics
+
+**Resources:**
+- ServiceMonitor CRDs (Custom Resource Definitions from Prometheus Operator)
+
+---
+
+### `grafana-dashboards.yaml` - Grafana Dashboards
+
+**What it provides:**
+- Pre-configured Grafana dashboards as ConfigMaps
+- Automatic dashboard provisioning via Grafana sidecar
+- Visualization for Kubernetes cluster and Kafka metrics
+
+**Configuration:**
+- **Dashboards**:
+  - `kubernetes-cluster`: CPU and memory usage by pod
+  - `kafka`: Kafka message throughput and consumer lag
+- **Format**: JSON dashboard definitions
+- **Namespace**: `monitoring`
+- **Label**: `grafana_dashboard: "1"` (for sidecar auto-discovery)
+
+**Dashboard Features:**
+- Real-time metrics visualization
+- Time-series graphs with customizable time ranges
+- Pod-level resource monitoring
+- Kafka performance metrics
+
+---
+
 ## Installation
 
 These resources are automatically installed by the setup script:
@@ -72,6 +120,10 @@ The script:
 3. Installs MongoDB Community Operator via Helm
 4. Applies `mongodb.yaml` to create MongoDB database
 5. Installs KEDA operator for autoscaling
+6. Installs Prometheus with kube-prometheus-stack (includes node-exporter, kube-state-metrics)
+7. Applies `prometheus.yaml` to configure ServiceMonitors
+8. Installs Grafana with pre-configured Prometheus datasource
+9. Applies `grafana-dashboards.yaml` to load dashboards
 
 **Manual installation:**
 
@@ -91,6 +143,26 @@ helm install mongodb-operator mongodb/community-operator \
 
 # Apply MongoDB configuration
 kubectl apply -f infrastructure/mongodb.yaml
+
+# Install Prometheus stack
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install prometheus prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace \
+  --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
+  --set grafana.enabled=false
+
+# Apply Prometheus ServiceMonitors
+kubectl apply -f infrastructure/prometheus.yaml
+
+# Install Grafana
+helm repo add grafana https://grafana.github.io/helm-charts
+helm install grafana grafana/grafana \
+  --namespace monitoring \
+  --set adminPassword=admin \
+  --set sidecar.dashboards.enabled=true
+
+# Apply Grafana dashboards
+kubectl apply -f infrastructure/grafana-dashboards.yaml
 ```
 
 ---
@@ -123,6 +195,26 @@ kubectl exec -it -n mongodb mongodb-0 -c mongod -- \
   mongosh -u admin -p password --authenticationDatabase admin
 ```
 
+**Check Monitoring:**
+```bash
+# Check monitoring pods
+kubectl get pods -n monitoring
+
+# Check Prometheus
+kubectl get prometheus -n monitoring
+
+# Check ServiceMonitors
+kubectl get servicemonitor -n monitoring
+
+# Access Grafana UI
+kubectl port-forward -n monitoring svc/grafana 3000:80
+# Open http://localhost:3000 (username: admin, password: admin)
+
+# Access Prometheus UI
+kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 9090:9090
+# Open http://localhost:9090
+```
+
 ---
 
 ## Architecture Decisions
@@ -153,6 +245,28 @@ kubectl exec -it -n mongodb mongodb-0 -c mongod -- \
 - **Lifecycle**: Upgrade infra independently from application
 - **Resource Quotas**: Separate resource limits per namespace
 - **Monitoring**: Easier to track resource usage per layer
+
+### Why Prometheus + Grafana Stack?
+
+**Prometheus Advantages:**
+- Industry-standard for Kubernetes monitoring
+- Pull-based metrics collection (ServiceMonitors)
+- PromQL for powerful queries and alerting
+- Native Kubernetes integration via Operator
+- Includes kube-state-metrics and node-exporter for comprehensive cluster monitoring
+
+**Grafana Advantages:**
+- Rich visualization capabilities
+- Dashboard as code (ConfigMaps)
+- Multiple datasource support
+- Community dashboards available
+- Alert visualization and management
+
+**kube-prometheus-stack Benefits:**
+- Bundles Prometheus Operator, Prometheus, node-exporter, kube-state-metrics
+- Production-ready configuration out-of-the-box
+- CRDs for ServiceMonitors and PrometheusRules
+- Regular updates and active community
 
 ---
 
@@ -200,17 +314,20 @@ To remove all infrastructure:
 kubectl delete kafka kafka -n kafka
 kubectl delete mongodbcommunity mongodb -n mongodb
 
-# Uninstall operators
+# Uninstall Helm releases
 helm uninstall strimzi-kafka-operator -n kafka
 helm uninstall mongodb-operator -n mongodb
 helm uninstall keda -n keda
+helm uninstall prometheus -n monitoring
+helm uninstall grafana -n monitoring
 
 # Delete PVCs
 kubectl delete pvc -n kafka --all
 kubectl delete pvc -n mongodb --all
+kubectl delete pvc -n monitoring --all
 
 # Delete namespaces
-kubectl delete namespace kafka mongodb keda
+kubectl delete namespace kafka mongodb keda monitoring
 ```
 
 ---
@@ -221,3 +338,6 @@ kubectl delete namespace kafka mongodb keda
 - [MongoDB Community Operator](https://github.com/mongodb/mongodb-kubernetes-operator)
 - [KEDA Documentation](https://keda.sh/docs/)
 - [Kafka KRaft Mode](https://kafka.apache.org/documentation/#kraft)
+- [Prometheus Operator](https://prometheus-operator.dev/)
+- [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)
+- [Grafana Documentation](https://grafana.com/docs/grafana/latest/)

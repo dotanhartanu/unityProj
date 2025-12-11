@@ -1,0 +1,73 @@
+# Prometheus configuration for monitoring
+# This file defines ServiceMonitor resources that tell Prometheus what to scrape
+#
+# ServiceMonitors are custom resources provided by the Prometheus Operator
+# They automatically discover and scrape metrics from Kubernetes services
+
+---
+# ServiceMonitor for the purchase-system application
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: purchase-system-monitor
+  namespace: monitoring
+  labels:
+    app: purchase-system
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      # Match services with these labels in the purchase-system namespace
+      monitoring: "true"
+  namespaceSelector:
+    matchNames:
+      - purchase-system
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+
+---
+# ServiceMonitor for Kafka metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kafka-monitor
+  namespace: monitoring
+  labels:
+    app: kafka
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      strimzi.io/kind: Kafka
+  namespaceSelector:
+    matchNames:
+      - kafka
+  endpoints:
+    - port: tcp-prometheus
+      path: /metrics
+      interval: 30s
+
+---
+# ServiceMonitor for MongoDB metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mongodb-monitor
+  namespace: monitoring
+  labels:
+    app: mongodb
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: mongodb-exporter
+  namespaceSelector:
+    matchNames:
+      - mongodb
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
