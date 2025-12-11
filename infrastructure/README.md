@@ -58,6 +58,80 @@ This directory contains Kubernetes manifest files for infrastructure components 
 
 ---
 
+### `prometheus-values.yaml` - Prometheus Monitoring Stack
+
+**What it provides:**
+- Prometheus Operator and Prometheus server
+- node-exporter for node-level metrics
+- kube-state-metrics for Kubernetes object metrics
+- Alertmanager for alert management
+
+**Configuration:**
+- **Scrape Interval**: 30 seconds
+- **Retention Period**: 7 days
+- **Storage**: 10Gi persistent volume
+- **Namespace**: `monitoring`
+
+**Services Created:**
+- `prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090` - Prometheus API
+
+**Key Features:**
+- Automatic service discovery via ServiceMonitors
+- Monitors application, Kafka, and MongoDB metrics
+- Pre-configured node and cluster metrics collection
+
+---
+
+### `grafana-values.yaml` - Grafana Visualization
+
+**What it provides:**
+- Grafana dashboard and visualization platform
+- Pre-configured Prometheus datasource
+- Ingress-enabled for external access
+
+**Configuration:**
+- **Admin Credentials**: admin/admin
+- **Storage**: 5Gi persistent volume
+- **Ingress Path**: `/grafana`
+- **Namespace**: `monitoring`
+
+**Access:**
+- URL: `http://purchase.localhost:8080/grafana`
+- Exposed via Traefik ingress controller
+- Configured for subpath hosting
+
+**Key Features:**
+- Auto-loading dashboards via sidecar
+- Pre-configured Kubernetes and Kafka dashboards
+- Path-based routing with ingress
+
+---
+
+### `servicemonitors.yaml` - Prometheus Service Discovery
+
+**What it provides:**
+- ServiceMonitor CRDs for automatic metrics collection
+- Configures Prometheus scrape targets
+
+**Monitors:**
+- **purchase-system-monitor**: Application pods (web-server, management-api, frontend)
+- **kafka-monitor**: Kafka broker metrics via Strimzi exporter
+- **mongodb-monitor**: MongoDB database metrics
+
+---
+
+### `grafana-dashboards.yaml` - Pre-configured Dashboards
+
+**What it provides:**
+- ConfigMaps with dashboard definitions
+- Auto-loaded into Grafana via sidecar
+
+**Dashboards:**
+- **kubernetes-cluster**: CPU and memory usage by pod
+- **kafka**: Message throughput and consumer lag monitoring
+
+---
+
 ## Installation
 
 These resources are automatically installed by the setup script:
@@ -72,6 +146,8 @@ The script:
 3. Installs MongoDB Community Operator via Helm
 4. Applies `mongodb.yaml` to create MongoDB database
 5. Installs KEDA operator for autoscaling
+6. Installs Prometheus stack with ServiceMonitors
+7. Installs Grafana with ingress at `/grafana`
 
 **Manual installation:**
 
@@ -91,6 +167,24 @@ helm install mongodb-operator mongodb/community-operator \
 
 # Apply MongoDB configuration
 kubectl apply -f infrastructure/mongodb.yaml
+
+# Install Prometheus stack
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install prometheus prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace \
+  --values infrastructure/prometheus-values.yaml
+
+# Create ServiceMonitors
+kubectl apply -f infrastructure/servicemonitors.yaml
+
+# Install Grafana
+helm repo add grafana https://grafana.github.io/helm-charts
+helm install grafana grafana/grafana \
+  --namespace monitoring \
+  --values infrastructure/grafana-values.yaml
+
+# Create Grafana dashboards
+kubectl apply -f infrastructure/grafana-dashboards.yaml
 ```
 
 ---
@@ -123,6 +217,27 @@ kubectl exec -it -n mongodb mongodb-0 -c mongod -- \
   mongosh -u admin -p password --authenticationDatabase admin
 ```
 
+**Check Monitoring:**
+```bash
+# Check monitoring pods
+kubectl get pods -n monitoring
+
+# Check Prometheus
+kubectl get prometheus -n monitoring
+
+# Check ServiceMonitors
+kubectl get servicemonitors -n monitoring
+
+# Access Grafana (via ingress)
+# Open: http://purchase.localhost:8080/grafana
+# Username: admin
+# Password: admin
+
+# Access Prometheus (via port-forward)
+kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 9090:9090
+# Open: http://localhost:9090
+```
+
 ---
 
 ## Architecture Decisions
@@ -144,6 +259,24 @@ kubectl exec -it -n mongodb mongodb-0 -c mongod -- \
 - Native MongoDB features (replica sets, sharding)
 - More flexible configuration
 - Regular updates aligned with MongoDB releases
+
+### Why kube-prometheus-stack instead of standalone Prometheus?
+
+**kube-prometheus-stack Advantages:**
+- Includes Prometheus Operator for CRD-based configuration
+- Bundles node-exporter and kube-state-metrics
+- Pre-configured for Kubernetes monitoring
+- ServiceMonitor CRDs for automatic service discovery
+- Production-ready with best practices
+
+### Why Grafana with Ingress instead of Port-Forward?
+
+**Ingress Advantages:**
+- Persistent access without manual port-forwarding
+- Path-based routing (`/grafana`) allows multiple services on same host
+- Production-ready pattern for external access
+- Traefik integration included with k3d
+- Easier to share dashboards with team members
 
 ### Why Separate Namespaces?
 
@@ -200,17 +333,20 @@ To remove all infrastructure:
 kubectl delete kafka kafka -n kafka
 kubectl delete mongodbcommunity mongodb -n mongodb
 
-# Uninstall operators
+# Uninstall operators and monitoring
 helm uninstall strimzi-kafka-operator -n kafka
 helm uninstall mongodb-operator -n mongodb
 helm uninstall keda -n keda
+helm uninstall prometheus -n monitoring
+helm uninstall grafana -n monitoring
 
 # Delete PVCs
 kubectl delete pvc -n kafka --all
 kubectl delete pvc -n mongodb --all
+kubectl delete pvc -n monitoring --all
 
 # Delete namespaces
-kubectl delete namespace kafka mongodb keda
+kubectl delete namespace kafka mongodb keda monitoring
 ```
 
 ---
@@ -221,3 +357,6 @@ kubectl delete namespace kafka mongodb keda
 - [MongoDB Community Operator](https://github.com/mongodb/mongodb-kubernetes-operator)
 - [KEDA Documentation](https://keda.sh/docs/)
 - [Kafka KRaft Mode](https://kafka.apache.org/documentation/#kraft)
+- [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)
+- [Grafana Documentation](https://grafana.com/docs/grafana/latest/)
+- [Prometheus Operator](https://prometheus-operator.dev/)

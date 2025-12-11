@@ -1,0 +1,76 @@
+# ServiceMonitor Resources
+# Configures Prometheus to scrape metrics from application services
+#
+# ServiceMonitor is a CRD from Prometheus Operator that automatically
+# configures Prometheus scrape targets based on Kubernetes services.
+
+---
+# Purchase System Application Monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: purchase-system-monitor
+  namespace: monitoring
+  labels:
+    monitoring: "true"
+spec:
+  # Select services in purchase-system namespace
+  namespaceSelector:
+    matchNames:
+      - purchase-system
+
+  # Select all services with app label
+  selector:
+    matchLabels:
+      app: purchase-system
+
+  # Scrape configuration
+  endpoints:
+    - port: http
+      interval: 30s
+      path: /metrics
+
+---
+# Kafka Monitoring (Strimzi provides metrics endpoints)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kafka-monitor
+  namespace: monitoring
+  labels:
+    monitoring: "true"
+spec:
+  namespaceSelector:
+    matchNames:
+      - kafka
+
+  selector:
+    matchLabels:
+      strimzi.io/kind: Kafka
+
+  endpoints:
+    - port: tcp-prometheus
+      interval: 30s
+
+---
+# MongoDB Monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mongodb-monitor
+  namespace: monitoring
+  labels:
+    monitoring: "true"
+spec:
+  namespaceSelector:
+    matchNames:
+      - mongodb
+
+  selector:
+    matchLabels:
+      app: mongodb-svc
+
+  endpoints:
+    - port: prometheus
+      interval: 30s
+      path: /metrics

@@ -1,0 +1,80 @@
+# Grafana Dashboard ConfigMaps
+# Pre-configured dashboards that load automatically via sidecar
+#
+# These dashboards are loaded into Grafana using the sidecar pattern:
+# - ConfigMaps labeled with grafana_dashboard=1
+# - Sidecar watches for these ConfigMaps and loads them into Grafana
+
+---
+# Kubernetes Cluster Dashboard
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-kubernetes
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  kubernetes-cluster.json: |
+    {
+      "dashboard": {
+        "title": "Kubernetes Cluster Overview",
+        "panels": [
+          {
+            "title": "CPU Usage by Pod",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"purchase-system\"}[5m])) by (pod)"
+              }
+            ]
+          },
+          {
+            "title": "Memory Usage by Pod",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(container_memory_usage_bytes{namespace=\"purchase-system\"}) by (pod)"
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+---
+# Kafka Dashboard
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-kafka
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  kafka.json: |
+    {
+      "dashboard": {
+        "title": "Kafka Monitoring",
+        "panels": [
+          {
+            "title": "Kafka Message Throughput",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(kafka_server_brokertopicmetrics_messagesin_total[5m])"
+              }
+            ]
+          },
+          {
+            "title": "Consumer Lag",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "kafka_consumergroup_lag"
+              }
+            ]
+          }
+        ]
+      }
+    }

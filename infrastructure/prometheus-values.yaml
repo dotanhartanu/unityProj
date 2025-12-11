@@ -1,0 +1,55 @@
+# Prometheus Stack Helm Values
+# Using kube-prometheus-stack chart which includes:
+# - Prometheus Operator
+# - Prometheus server
+# - Alertmanager
+# - node-exporter (node metrics)
+# - kube-state-metrics (K8s object metrics)
+
+# Prometheus configuration
+prometheus:
+  prometheusSpec:
+    # ServiceMonitor selector - monitors services with this label
+    serviceMonitorSelector:
+      matchLabels:
+        monitoring: "true"
+
+    # Scrape interval
+    scrapeInterval: 30s
+
+    # Retention period for metrics
+    retention: 7d
+
+    # Storage configuration
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+# Grafana is installed separately with its own values
+# Disable the bundled Grafana
+grafana:
+  enabled: false
+
+# Alertmanager configuration (optional, can be disabled for simple setups)
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+
+# node-exporter - collects node-level metrics
+prometheus-node-exporter:
+  enabled: true
+
+# kube-state-metrics - collects K8s object metrics
+kube-state-metrics:
+  enabled: true
