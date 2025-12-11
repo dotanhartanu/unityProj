@@ -10,15 +10,24 @@
 prometheus:
   prometheusSpec:
     # ServiceMonitor selector - monitors services with this label
-    serviceMonitorSelector:
-      matchLabels:
-        monitoring: "true"
+    # Using empty selector to discover all ServiceMonitors in all namespaces
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
 
     # Scrape interval
     scrapeInterval: 30s
 
     # Retention period for metrics
     retention: 7d
+
+    # Resource limits
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 1000m
+        memory: 4Gi
 
     # Storage configuration
     storageSpec:
@@ -34,10 +43,19 @@ prometheus:
 grafana:
   enabled: false
 
-# Alertmanager configuration (optional, can be disabled for simple setups)
+# Alertmanager configuration
+# NOTE: Alertmanager is enabled but no alert rules are configured
+# Consider disabling (enabled: false) to save resources, or add alert rules
 alertmanager:
   enabled: true
   alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
     storage:
       volumeClaimTemplate:
         spec:

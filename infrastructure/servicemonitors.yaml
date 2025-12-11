@@ -5,26 +5,46 @@
 # configures Prometheus scrape targets based on Kubernetes services.
 
 ---
-# Purchase System Application Monitoring
+# Web Server Monitoring
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: purchase-system-monitor
+  name: web-server-monitor
   namespace: monitoring
   labels:
     monitoring: "true"
 spec:
-  # Select services in purchase-system namespace
   namespaceSelector:
     matchNames:
       - purchase-system
 
-  # Select all services with app label
   selector:
     matchLabels:
-      app: purchase-system
+      app: web-server
 
-  # Scrape configuration
+  endpoints:
+    - port: http
+      interval: 30s
+      path: /metrics
+
+---
+# Management API Monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: management-api-monitor
+  namespace: monitoring
+  labels:
+    monitoring: "true"
+spec:
+  namespaceSelector:
+    matchNames:
+      - purchase-system
+
+  selector:
+    matchLabels:
+      app: management-api
+
   endpoints:
     - port: http
       interval: 30s
@@ -53,11 +73,11 @@ spec:
       interval: 30s
 
 ---
-# MongoDB Monitoring
+# MongoDB Exporter Monitoring
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: mongodb-monitor
+  name: mongodb-exporter-monitor
   namespace: monitoring
   labels:
     monitoring: "true"
@@ -68,9 +88,9 @@ spec:
 
   selector:
     matchLabels:
-      app: mongodb-svc
+      app: mongodb-exporter
 
   endpoints:
-    - port: prometheus
+    - port: metrics
       interval: 30s
       path: /metrics

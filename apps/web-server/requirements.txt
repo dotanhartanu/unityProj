@@ -3,6 +3,7 @@ uvicorn==0.27.0
 aiokafka==0.10.0
 httpx==0.26.0
 pydantic==2.5.3
+prometheus-fastapi-instrumentator==7.0.0
 
 # Testing dependencies
 pytest==7.4.3

@@ -1,0 +1,71 @@
+# MongoDB Exporter for Prometheus
+#
+# Exposes MongoDB metrics at /metrics endpoint for Prometheus scraping.
+# Uses official percona/mongodb_exporter which supports MongoDB Community Edition.
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-exporter
+  namespace: mongodb
+  labels:
+    app: mongodb-exporter
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9216
+      targetPort: 9216
+      protocol: TCP
+      name: metrics
+  selector:
+    app: mongodb-exporter
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb-exporter
+  namespace: mongodb
+  labels:
+    app: mongodb-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb-exporter
+  template:
+    metadata:
+      labels:
+        app: mongodb-exporter
+    spec:
+      containers:
+      - name: mongodb-exporter
+        image: percona/mongodb_exporter:0.40
+        args:
+          - "--mongodb.uri=mongodb://admin:password@mongodb-0.mongodb-svc.mongodb.svc.cluster.local:27017"
+          - "--mongodb.direct-connect=true"
+          - "--discovering-mode"
+          - "--compatible-mode"
+        ports:
+        - containerPort: 9216
+          name: metrics
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 9216
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 9216
+          initialDelaySeconds: 5
+          periodSeconds: 5

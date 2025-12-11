@@ -6,6 +6,46 @@
 # KafkaNodePool defines Kafka nodes with combined broker and controller roles.
 # Version 4.0.0 is required by latest Strimzi operator.
 
+---
+# ConfigMap for Kafka Prometheus metrics configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-metrics-config
+  namespace: kafka
+data:
+  kafka-metrics-config.yml: |
+    lowercaseOutputName: true
+    rules:
+    # Kafka broker metrics
+    - pattern: kafka.server<type=(.+), name=(.+), clientId=(.+), topic=(.+), partition=(.*)><>Value
+      name: kafka_server_$1_$2
+      type: GAUGE
+      labels:
+       clientId: "$3"
+       topic: "$4"
+       partition: "$5"
+    - pattern: kafka.server<type=(.+), name=(.+), clientId=(.+), brokerHost=(.+), brokerPort=(.+)><>Value
+      name: kafka_server_$1_$2
+      type: GAUGE
+      labels:
+       clientId: "$3"
+       broker: "$4:$5"
+    - pattern: kafka.server<type=(.+), name=(.+)><>Value
+      name: kafka_server_$1_$2
+      type: GAUGE
+    # Kafka network metrics
+    - pattern: kafka.network<type=(.+), name=(.+)><>Value
+      name: kafka_network_$1_$2
+      type: GAUGE
+    # Kafka log metrics
+    - pattern: kafka.log<type=(.+), name=(.+), topic=(.+), partition=(.*)><>Value
+      name: kafka_log_$1_$2
+      type: GAUGE
+      labels:
+       topic: "$3"
+       partition: "$4"
+---
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaNodePool
 metadata:
@@ -40,6 +80,14 @@ spec:
         port: 9092
         type: internal  # Only accessible within Kubernetes
         tls: false      # No encryption (OK for dev)
+
+    # Enable Prometheus metrics export
+    metricsConfig:
+      type: jmxPrometheusExporter
+      valueFrom:
+        configMapKeyRef:
+          name: kafka-metrics-config
+          key: kafka-metrics-config.yml
 
     # Kafka broker configuration
     config:

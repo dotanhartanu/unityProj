@@ -71,6 +71,7 @@ This directory contains Kubernetes manifest files for infrastructure components 
 - **Retention Period**: 7 days
 - **Storage**: 10Gi persistent volume
 - **Namespace**: `monitoring`
+- **Resource Limits**: 1 CPU, 4Gi memory (Prometheus); 200m CPU, 256Mi memory (Alertmanager)
 
 **Services Created:**
 - `prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090` - Prometheus API
@@ -90,10 +91,11 @@ This directory contains Kubernetes manifest files for infrastructure components 
 - Ingress-enabled for external access
 
 **Configuration:**
-- **Admin Credentials**: admin/admin
+- **Admin Credentials**: admin/admin ⚠️ **CHANGE FOR PRODUCTION**
 - **Storage**: 5Gi persistent volume
 - **Ingress Path**: `/grafana`
 - **Namespace**: `monitoring`
+- **Resource Limits**: 500m CPU, 1Gi memory
 
 **Access:**
 - URL: `http://purchase.localhost:8080/grafana`
@@ -114,9 +116,10 @@ This directory contains Kubernetes manifest files for infrastructure components 
 - Configures Prometheus scrape targets
 
 **Monitors:**
-- **purchase-system-monitor**: Application pods (web-server, management-api, frontend)
-- **kafka-monitor**: Kafka broker metrics via Strimzi exporter
-- **mongodb-monitor**: MongoDB database metrics
+- **web-server-monitor**: Web server FastAPI metrics (`/metrics`)
+- **management-api-monitor**: Management API FastAPI metrics (`/metrics`)
+- **kafka-monitor**: Kafka broker metrics via JMX exporter
+- **mongodb-exporter-monitor**: MongoDB metrics via Percona exporter
 
 ---
 
@@ -127,8 +130,13 @@ This directory contains Kubernetes manifest files for infrastructure components 
 - Auto-loaded into Grafana via sidecar
 
 **Dashboards:**
-- **kubernetes-cluster**: CPU and memory usage by pod
-- **kafka**: Message throughput and consumer lag monitoring
+- Dashboard configuration removed - use community dashboards instead
+- **Recommended imports:**
+  - Kubernetes Cluster Monitoring (ID: 315)
+  - Kubernetes Namespace Pods (ID: 6417)
+  - Kafka Overview (ID: 7589)
+  - MongoDB Dashboard (ID: 2583)
+  - FastAPI Observability (ID: 16110)
 
 ---
 
@@ -167,6 +175,9 @@ helm install mongodb-operator mongodb/community-operator \
 
 # Apply MongoDB configuration
 kubectl apply -f infrastructure/mongodb.yaml
+
+# Deploy MongoDB exporter
+kubectl apply -f infrastructure/mongodb-exporter.yaml
 
 # Install Prometheus stack
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -316,9 +327,47 @@ kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 909
 ⚠️ **Development/Demo Only**
 
 Current setup prioritizes simplicity over security:
-- Kafka: PLAINTEXT (no auth/TLS)
-- MongoDB: Basic auth with simple password
+- **Kafka**: PLAINTEXT (no auth/TLS)
+- **MongoDB**: Basic auth with simple password in Secret
+- **Grafana**: Default admin/admin credentials ⚠️
+- **MongoDB Exporter**: Password in deployment manifest
 - No network policies or pod security standards
+
+### Production Security Checklist
+
+Before deploying to production:
+
+1. **Grafana Credentials**
+   ```bash
+   # Create secure password in Secret
+   kubectl create secret generic grafana-admin \
+     --from-literal=admin-password=$(openssl rand -base64 32) \
+     -n monitoring
+
+   # Update grafana-values.yaml to reference secret
+   # admin:
+   #   existingSecret: grafana-admin
+   #   passwordKey: admin-password
+   ```
+
+2. **MongoDB Credentials**
+   - Use external secret management (Vault, AWS Secrets Manager)
+   - Rotate credentials regularly
+   - Use separate credentials for exporter
+
+3. **Kafka Security**
+   - Enable TLS encryption
+   - Configure SASL authentication
+   - Implement ACLs for topic access
+
+4. **Network Policies**
+   - Restrict pod-to-pod communication
+   - Limit ingress to monitoring namespace
+
+5. **Ingress Security**
+   - Enable TLS/HTTPS
+   - Add authentication (OAuth, LDAP)
+   - Use cert-manager for certificate management
 
 See main [README.md](../README.md#-security-note) for production security checklist.
 

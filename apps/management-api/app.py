@@ -26,6 +26,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
+from prometheus_fastapi_instrumentator import Instrumentator
 
 # Configure logging
 logging.basicConfig(
@@ -226,6 +227,10 @@ app = FastAPI(
     description="Consumes purchases from Kafka and provides query API",
     lifespan=lifespan
 )
+
+# Initialize Prometheus instrumentation
+# Exposes /metrics endpoint for Prometheus scraping
+Instrumentator().instrument(app).expose(app)
 
 
 @app.get("/health")

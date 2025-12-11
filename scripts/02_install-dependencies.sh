@@ -145,6 +145,9 @@ kubectl apply -f infrastructure/mongodb.yaml > /dev/null 2>&1 && echo -e " ${GRE
 echo -n "  Waiting for MongoDB cluster to be ready (may take 2-3 minutes)..."
 kubectl wait mongodbcommunity/mongodb --for=jsonpath='{.status.phase}'=Running --timeout=600s -n mongodb > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
 
+echo -n "  Creating MongoDB exporter..."
+kubectl apply -f infrastructure/mongodb-exporter.yaml > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
+
 echo ""
 echo -e "${BLUE}Step 4/6: Installing KEDA (this may take 1-2 minutes)${NC}"
 echo "  - Event-driven autoscaling operator"

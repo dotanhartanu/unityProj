@@ -2,8 +2,27 @@
 # Standalone Grafana installation with ingress support
 
 # Admin credentials
+# SECURITY WARNING: Default credentials are used for development only!
+# For production deployments:
+# 1. Create a Kubernetes Secret with a strong password:
+#    kubectl create secret generic grafana-admin --from-literal=admin-password=<strong-password> -n monitoring
+# 2. Reference the secret:
+#    admin:
+#      existingSecret: grafana-admin
+#      userKey: admin-user
+#      passwordKey: admin-password
+# 3. Remove the plaintext adminPassword below
 adminUser: admin
-adminPassword: admin
+adminPassword: admin  # CHANGE THIS FOR PRODUCTION!
+
+# Resource limits
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 500m
+    memory: 1Gi
 
 # Persistence configuration
 persistence:

@@ -1,80 +1,45 @@
 # Grafana Dashboard ConfigMaps
 # Pre-configured dashboards that load automatically via sidecar
 #
-# These dashboards are loaded into Grafana using the sidecar pattern:
-# - ConfigMaps labeled with grafana_dashboard=1
-# - Sidecar watches for these ConfigMaps and loads them into Grafana
+# RECOMMENDED COMMUNITY DASHBOARDS:
+# Instead of maintaining custom JSON, import these popular dashboards from grafana.com:
+#
+# 1. Kubernetes Cluster Monitoring (Dashboard ID: 315)
+#    - Overall cluster health, resource usage
+#
+# 2. Kubernetes / Compute Resources / Namespace (Pods) (Dashboard ID: 6417)
+#    - Detailed pod-level metrics for purchase-system namespace
+#
+# 3. Kafka Overview (Dashboard ID: 7589)
+#    - Kafka broker metrics, throughput, consumer lag
+#
+# 4. MongoDB Dashboard (Dashboard ID: 2583)
+#    - MongoDB performance metrics
+#
+# 5. FastAPI Observability (Dashboard ID: 16110)
+#    - HTTP request metrics from FastAPI applications
+#
+# To import:
+# 1. Access Grafana at http://purchase.localhost:8080/grafana
+# 2. Navigate to Dashboards > Import
+# 3. Enter the dashboard ID and click Load
+# 4. Select Prometheus as the data source
+# 5. Click Import
+#
+# For automated dashboard provisioning, see:
+# https://grafana.com/docs/grafana/latest/dashboards/build-dashboards/import-dashboards/
 
----
-# Kubernetes Cluster Dashboard
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: grafana-dashboard-kubernetes
-  namespace: monitoring
-  labels:
-    grafana_dashboard: "1"
-data:
-  kubernetes-cluster.json: |
-    {
-      "dashboard": {
-        "title": "Kubernetes Cluster Overview",
-        "panels": [
-          {
-            "title": "CPU Usage by Pod",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"purchase-system\"}[5m])) by (pod)"
-              }
-            ]
-          },
-          {
-            "title": "Memory Usage by Pod",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "sum(container_memory_usage_bytes{namespace=\"purchase-system\"}) by (pod)"
-              }
-            ]
-          }
-        ]
-      }
-    }
-
----
-# Kafka Dashboard
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: grafana-dashboard-kafka
-  namespace: monitoring
-  labels:
-    grafana_dashboard: "1"
-data:
-  kafka.json: |
-    {
-      "dashboard": {
-        "title": "Kafka Monitoring",
-        "panels": [
-          {
-            "title": "Kafka Message Throughput",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "rate(kafka_server_brokertopicmetrics_messagesin_total[5m])"
-              }
-            ]
-          },
-          {
-            "title": "Consumer Lag",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "kafka_consumergroup_lag"
-              }
-            ]
-          }
-        ]
-      }
-    }
+# Example: Custom dashboard ConfigMap (currently empty - add your own custom dashboards here)
+# ---
+# apiVersion: v1
+# kind: ConfigMap
+# metadata:
+#   name: grafana-dashboard-custom
+#   namespace: monitoring
+#   labels:
+#     grafana_dashboard: "1"
+# data:
+#   custom-dashboard.json: |
+#     {
+#       "dashboard": { ... valid Grafana dashboard JSON ... }
+#     }
