@@ -92,7 +92,7 @@ helm repo add kedacore https://kedacore.github.io/charts 2>/dev/null || echo "  
 # Prometheus - Monitoring and alerting
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || echo "  Prometheus repo already exists"
 
-# Grafana - Visualization and dashboards
+# Grafana - Metrics visualization
 helm repo add grafana https://grafana.github.io/helm-charts 2>/dev/null || echo "  Grafana repo already exists"
 
 echo -n "  Updating Helm repositories..."
@@ -145,6 +145,9 @@ kubectl apply -f infrastructure/mongodb.yaml > /dev/null 2>&1 && echo -e " ${GRE
 echo -n "  Waiting for MongoDB cluster to be ready (may take 2-3 minutes)..."
 kubectl wait mongodbcommunity/mongodb --for=jsonpath='{.status.phase}'=Running --timeout=600s -n mongodb > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
 
+echo -n "  Creating MongoDB exporter..."
+kubectl apply -f infrastructure/mongodb-exporter.yaml > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
+
 echo ""
 echo -e "${BLUE}Step 4/6: Installing KEDA (this may take 1-2 minutes)${NC}"
 echo "  - Event-driven autoscaling operator"
@@ -162,57 +165,43 @@ kubectl wait --for=condition=ready pod -l app.kubernetes.io/part-of=keda-operato
 
 echo ""
 echo -e "${BLUE}Step 5/6: Installing Prometheus (this may take 2-3 minutes)${NC}"
-echo "  - Prometheus Operator with CRDs"
-echo "  - Node exporter for node metrics"
-echo "  - Kube-state-metrics for cluster metrics"
+echo "  - Using kube-prometheus-stack (Prometheus Operator)"
+echo "  - Includes node-exporter and kube-state-metrics"
+echo "  - Monitors infrastructure and application metrics"
 echo ""
 
 run_with_spinner "  Installing Prometheus stack..." \
     helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
         --namespace monitoring \
         --create-namespace \
-        --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
-        --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false \
-        --set grafana.enabled=false \
-        --set alertmanager.enabled=false \
+        --values infrastructure/prometheus-values.yaml \
         --wait \
         --timeout 10m
 
 echo -n "  Waiting for Prometheus pods to be ready..."
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=300s > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
 
-echo -n "  Applying Prometheus ServiceMonitors..."
-kubectl apply -f infrastructure/prometheus.yaml > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
+echo -n "  Creating ServiceMonitors..."
+kubectl apply -f infrastructure/servicemonitors.yaml > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
 
 echo ""
 echo -e "${BLUE}Step 6/6: Installing Grafana (this may take 1-2 minutes)${NC}"
-echo "  - Grafana for visualization"
-echo "  - Pre-configured dashboards"
-echo "  - Prometheus datasource"
+echo "  - Standalone Grafana with pre-configured Prometheus datasource"
+echo "  - Ingress enabled at /grafana path"
+echo "  - Auto-loading dashboards via sidecar"
 echo ""
 
 run_with_spinner "  Installing Grafana chart..." \
     helm upgrade --install grafana grafana/grafana \
         --namespace monitoring \
-        --set persistence.enabled=true \
-        --set persistence.size=5Gi \
-        --set adminPassword=admin \
-        --set datasources."datasources\.yaml".apiVersion=1 \
-        --set datasources."datasources\.yaml".datasources[0].name=Prometheus \
-        --set datasources."datasources\.yaml".datasources[0].type=prometheus \
-        --set datasources."datasources\.yaml".datasources[0].url=http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090 \
-        --set datasources."datasources\.yaml".datasources[0].isDefault=true \
-        --set datasources."datasources\.yaml".datasources[0].access=proxy \
-        --set sidecar.dashboards.enabled=true \
-        --set sidecar.dashboards.label=grafana_dashboard \
-        --set sidecar.dashboards.searchNamespace=monitoring \
+        --values infrastructure/grafana-values.yaml \
         --wait \
         --timeout 10m
 
-echo -n "  Waiting for Grafana pod to be ready..."
+echo -n "  Waiting for Grafana pods to be ready..."
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=grafana -n monitoring --timeout=300s > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
 
-echo -n "  Applying Grafana dashboards..."
+echo -n "  Creating Grafana dashboards..."
 kubectl apply -f infrastructure/grafana-dashboards.yaml > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
 
 echo ""
@@ -286,11 +275,12 @@ if [ "$KAFKA_STATUS" = "Running" ] && [ "$MONGODB_STATUS" = "Running" ] && [ "$K
     echo "Connection details:"
     echo "  Kafka:      kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
     echo "  MongoDB:    mongodb-0.mongodb-svc.mongodb.svc.cluster.local:27017"
-    echo "  Prometheus: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090"
+    echo "  Prometheus: prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090"
     echo ""
-    echo "Access Grafana:"
-    echo "  kubectl port-forward -n monitoring svc/grafana 3000:80"
-    echo "  Open http://localhost:3000 (admin/admin)"
+    echo "Grafana access (via ingress):"
+    echo "  URL: http://purchase.localhost:8080/grafana"
+    echo "  Username: admin"
+    echo "  Password: admin"
     echo ""
     echo "Next step: Build and deploy the application"
     echo "  ./scripts/03_build-and-deploy-local.sh"

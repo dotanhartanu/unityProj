@@ -30,6 +30,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import httpx
 from aiokafka import AIOKafkaProducer
+from prometheus_fastapi_instrumentator import Instrumentator
 
 # Configure logging - important for debugging in K8s
 # Note: In K8s, logs go to stdout/stderr and are collected by the logging stack
@@ -105,6 +106,10 @@ app = FastAPI(
     description="Handles purchase requests and queries for the Unity DevOps assignment",
     lifespan=lifespan
 )
+
+# Initialize Prometheus instrumentation
+# Exposes /metrics endpoint for Prometheus scraping
+Instrumentator().instrument(app).expose(app)
 
 
 @app.get("/health")

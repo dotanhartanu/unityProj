@@ -58,51 +58,85 @@ This directory contains Kubernetes manifest files for infrastructure components 
 
 ---
 
-### `prometheus.yaml` - Prometheus ServiceMonitors
+### `prometheus-values.yaml` - Prometheus Monitoring Stack
 
 **What it provides:**
-- ServiceMonitor custom resources for Prometheus Operator
-- Automatic service discovery and metrics scraping
-- Monitoring configuration for application and infrastructure
+- Prometheus Operator and Prometheus server
+- node-exporter for node-level metrics
+- kube-state-metrics for Kubernetes object metrics
+- Alertmanager for alert management
 
 **Configuration:**
-- **ServiceMonitors**:
-  - `purchase-system-monitor`: Monitors application services with label `monitoring: "true"`
-  - `kafka-monitor`: Monitors Kafka metrics via Strimzi exporter
-  - `mongodb-monitor`: Monitors MongoDB metrics via MongoDB exporter
 - **Scrape Interval**: 30 seconds
+- **Retention Period**: 7 days
+- **Storage**: 10Gi persistent volume
 - **Namespace**: `monitoring`
+- **Resource Limits**: 1 CPU, 4Gi memory (Prometheus); 200m CPU, 256Mi memory (Alertmanager)
 
-**Services Monitored:**
-- Purchase system application pods (web-server, management-api, frontend)
-- Kafka broker metrics
-- MongoDB database metrics
+**Services Created:**
+- `prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090` - Prometheus API
 
-**Resources:**
-- ServiceMonitor CRDs (Custom Resource Definitions from Prometheus Operator)
+**Key Features:**
+- Automatic service discovery via ServiceMonitors
+- Monitors application, Kafka, and MongoDB metrics
+- Pre-configured node and cluster metrics collection
 
 ---
 
-### `grafana-dashboards.yaml` - Grafana Dashboards
+### `grafana-values.yaml` - Grafana Visualization
 
 **What it provides:**
-- Pre-configured Grafana dashboards as ConfigMaps
-- Automatic dashboard provisioning via Grafana sidecar
-- Visualization for Kubernetes cluster and Kafka metrics
+- Grafana dashboard and visualization platform
+- Pre-configured Prometheus datasource
+- Ingress-enabled for external access
 
 **Configuration:**
-- **Dashboards**:
-  - `kubernetes-cluster`: CPU and memory usage by pod
-  - `kafka`: Kafka message throughput and consumer lag
-- **Format**: JSON dashboard definitions
+- **Admin Credentials**: admin/admin ⚠️ **CHANGE FOR PRODUCTION**
+- **Storage**: 5Gi persistent volume
+- **Ingress Path**: `/grafana`
 - **Namespace**: `monitoring`
-- **Label**: `grafana_dashboard: "1"` (for sidecar auto-discovery)
+- **Resource Limits**: 500m CPU, 1Gi memory
 
-**Dashboard Features:**
-- Real-time metrics visualization
-- Time-series graphs with customizable time ranges
-- Pod-level resource monitoring
-- Kafka performance metrics
+**Access:**
+- URL: `http://purchase.localhost:8080/grafana`
+- Exposed via Traefik ingress controller
+- Configured for subpath hosting
+
+**Key Features:**
+- Auto-loading dashboards via sidecar
+- Pre-configured Kubernetes and Kafka dashboards
+- Path-based routing with ingress
+
+---
+
+### `servicemonitors.yaml` - Prometheus Service Discovery
+
+**What it provides:**
+- ServiceMonitor CRDs for automatic metrics collection
+- Configures Prometheus scrape targets
+
+**Monitors:**
+- **web-server-monitor**: Web server FastAPI metrics (`/metrics`)
+- **management-api-monitor**: Management API FastAPI metrics (`/metrics`)
+- **kafka-monitor**: Kafka broker metrics via JMX exporter
+- **mongodb-exporter-monitor**: MongoDB metrics via Percona exporter
+
+---
+
+### `grafana-dashboards.yaml` - Pre-configured Dashboards
+
+**What it provides:**
+- ConfigMaps with dashboard definitions
+- Auto-loaded into Grafana via sidecar
+
+**Dashboards:**
+- Dashboard configuration removed - use community dashboards instead
+- **Recommended imports:**
+  - Kubernetes Cluster Monitoring (ID: 315)
+  - Kubernetes Namespace Pods (ID: 6417)
+  - Kafka Overview (ID: 7589)
+  - MongoDB Dashboard (ID: 2583)
+  - FastAPI Observability (ID: 16110)
 
 ---
 
@@ -120,10 +154,8 @@ The script:
 3. Installs MongoDB Community Operator via Helm
 4. Applies `mongodb.yaml` to create MongoDB database
 5. Installs KEDA operator for autoscaling
-6. Installs Prometheus with kube-prometheus-stack (includes node-exporter, kube-state-metrics)
-7. Applies `prometheus.yaml` to configure ServiceMonitors
-8. Installs Grafana with pre-configured Prometheus datasource
-9. Applies `grafana-dashboards.yaml` to load dashboards
+6. Installs Prometheus stack with ServiceMonitors
+7. Installs Grafana with ingress at `/grafana`
 
 **Manual installation:**
 
@@ -144,24 +176,25 @@ helm install mongodb-operator mongodb/community-operator \
 # Apply MongoDB configuration
 kubectl apply -f infrastructure/mongodb.yaml
 
+# Deploy MongoDB exporter
+kubectl apply -f infrastructure/mongodb-exporter.yaml
+
 # Install Prometheus stack
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm install prometheus prometheus-community/kube-prometheus-stack \
   --namespace monitoring --create-namespace \
-  --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
-  --set grafana.enabled=false
+  --values infrastructure/prometheus-values.yaml
 
-# Apply Prometheus ServiceMonitors
-kubectl apply -f infrastructure/prometheus.yaml
+# Create ServiceMonitors
+kubectl apply -f infrastructure/servicemonitors.yaml
 
 # Install Grafana
 helm repo add grafana https://grafana.github.io/helm-charts
 helm install grafana grafana/grafana \
   --namespace monitoring \
-  --set adminPassword=admin \
-  --set sidecar.dashboards.enabled=true
+  --values infrastructure/grafana-values.yaml
 
-# Apply Grafana dashboards
+# Create Grafana dashboards
 kubectl apply -f infrastructure/grafana-dashboards.yaml
 ```
 
@@ -204,15 +237,16 @@ kubectl get pods -n monitoring
 kubectl get prometheus -n monitoring
 
 # Check ServiceMonitors
-kubectl get servicemonitor -n monitoring
+kubectl get servicemonitors -n monitoring
 
-# Access Grafana UI
-kubectl port-forward -n monitoring svc/grafana 3000:80
-# Open http://localhost:3000 (username: admin, password: admin)
+# Access Grafana (via ingress)
+# Open: http://purchase.localhost:8080/grafana
+# Username: admin
+# Password: admin
 
-# Access Prometheus UI
+# Access Prometheus (via port-forward)
 kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 9090:9090
-# Open http://localhost:9090
+# Open: http://localhost:9090
 ```
 
 ---
@@ -236,6 +270,24 @@ kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 909
 - Native MongoDB features (replica sets, sharding)
 - More flexible configuration
 - Regular updates aligned with MongoDB releases
+
+### Why kube-prometheus-stack instead of standalone Prometheus?
+
+**kube-prometheus-stack Advantages:**
+- Includes Prometheus Operator for CRD-based configuration
+- Bundles node-exporter and kube-state-metrics
+- Pre-configured for Kubernetes monitoring
+- ServiceMonitor CRDs for automatic service discovery
+- Production-ready with best practices
+
+### Why Grafana with Ingress instead of Port-Forward?
+
+**Ingress Advantages:**
+- Persistent access without manual port-forwarding
+- Path-based routing (`/grafana`) allows multiple services on same host
+- Production-ready pattern for external access
+- Traefik integration included with k3d
+- Easier to share dashboards with team members
 
 ### Why Separate Namespaces?
 
@@ -275,9 +327,47 @@ kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 909
 ⚠️ **Development/Demo Only**
 
 Current setup prioritizes simplicity over security:
-- Kafka: PLAINTEXT (no auth/TLS)
-- MongoDB: Basic auth with simple password
+- **Kafka**: PLAINTEXT (no auth/TLS)
+- **MongoDB**: Basic auth with simple password in Secret
+- **Grafana**: Default admin/admin credentials ⚠️
+- **MongoDB Exporter**: Password in deployment manifest
 - No network policies or pod security standards
+
+### Production Security Checklist
+
+Before deploying to production:
+
+1. **Grafana Credentials**
+   ```bash
+   # Create secure password in Secret
+   kubectl create secret generic grafana-admin \
+     --from-literal=admin-password=$(openssl rand -base64 32) \
+     -n monitoring
+
+   # Update grafana-values.yaml to reference secret
+   # admin:
+   #   existingSecret: grafana-admin
+   #   passwordKey: admin-password
+   ```
+
+2. **MongoDB Credentials**
+   - Use external secret management (Vault, AWS Secrets Manager)
+   - Rotate credentials regularly
+   - Use separate credentials for exporter
+
+3. **Kafka Security**
+   - Enable TLS encryption
+   - Configure SASL authentication
+   - Implement ACLs for topic access
+
+4. **Network Policies**
+   - Restrict pod-to-pod communication
+   - Limit ingress to monitoring namespace
+
+5. **Ingress Security**
+   - Enable TLS/HTTPS
+   - Add authentication (OAuth, LDAP)
+   - Use cert-manager for certificate management
 
 See main [README.md](../README.md#-security-note) for production security checklist.
 
@@ -314,7 +404,7 @@ To remove all infrastructure:
 kubectl delete kafka kafka -n kafka
 kubectl delete mongodbcommunity mongodb -n mongodb
 
-# Uninstall Helm releases
+# Uninstall operators and monitoring
 helm uninstall strimzi-kafka-operator -n kafka
 helm uninstall mongodb-operator -n mongodb
 helm uninstall keda -n keda
@@ -338,6 +428,6 @@ kubectl delete namespace kafka mongodb keda monitoring
 - [MongoDB Community Operator](https://github.com/mongodb/mongodb-kubernetes-operator)
 - [KEDA Documentation](https://keda.sh/docs/)
 - [Kafka KRaft Mode](https://kafka.apache.org/documentation/#kraft)
-- [Prometheus Operator](https://prometheus-operator.dev/)
 - [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)
 - [Grafana Documentation](https://grafana.com/docs/grafana/latest/)
+- [Prometheus Operator](https://prometheus-operator.dev/)

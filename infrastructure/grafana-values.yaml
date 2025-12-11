@@ -1,0 +1,79 @@
+# Grafana Helm Values
+# Standalone Grafana installation with ingress support
+
+# Admin credentials
+# SECURITY WARNING: Default credentials are used for development only!
+# For production deployments:
+# 1. Create a Kubernetes Secret with a strong password:
+#    kubectl create secret generic grafana-admin --from-literal=admin-password=<strong-password> -n monitoring
+# 2. Reference the secret:
+#    admin:
+#      existingSecret: grafana-admin
+#      userKey: admin-user
+#      passwordKey: admin-password
+# 3. Remove the plaintext adminPassword below
+adminUser: admin
+adminPassword: admin  # CHANGE THIS FOR PRODUCTION!
+
+# Resource limits
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 500m
+    memory: 1Gi
+
+# Persistence configuration
+persistence:
+  enabled: true
+  size: 5Gi
+
+# Datasources configuration
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+        access: proxy
+        isDefault: true
+
+# Dashboard providers configuration
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+# Sidecar configuration for auto-loading dashboards
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"
+
+# Ingress configuration for /grafana path
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  hosts:
+    - purchase.localhost
+  path: /grafana
+  pathType: Prefix
+
+# IMPORTANT: Configure Grafana to work behind a reverse proxy with subpath
+grafana.ini:
+  server:
+    # Set the root URL to include the /grafana path
+    root_url: "%(protocol)s://%(domain)s:%(http_port)s/grafana/"
+    # Serve Grafana from a subpath
+    serve_from_sub_path: true
