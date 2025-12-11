@@ -14,6 +14,8 @@
 # Configuration files are in infrastructure/ directory:
 # - infrastructure/kafka.yaml (Strimzi Kafka with KRaft)
 # - infrastructure/mongodb.yaml (MongoDB Community Operator)
+# - infrastructure/prometheus.yaml (Prometheus ServiceMonitors)
+# - infrastructure/grafana-dashboards.yaml (Grafana dashboards)
 
 set -e
 
@@ -75,7 +77,7 @@ echo -e "${BLUE}Installing Infrastructure Dependencies${NC}"
 echo "=========================================="
 echo ""
 
-echo -e "${BLUE}Step 1/4: Adding Helm repositories${NC}"
+echo -e "${BLUE}Step 1/6: Adding Helm repositories${NC}"
 echo ""
 
 # Strimzi - Kafka operator (production-ready, open-source)
@@ -87,11 +89,17 @@ helm repo add mongodb https://mongodb.github.io/helm-charts 2>/dev/null || echo 
 # KEDA - Kubernetes Event-Driven Autoscaling
 helm repo add kedacore https://kedacore.github.io/charts 2>/dev/null || echo "  KEDA repo already exists"
 
+# Prometheus - Monitoring and alerting
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || echo "  Prometheus repo already exists"
+
+# Grafana - Visualization and dashboards
+helm repo add grafana https://grafana.github.io/helm-charts 2>/dev/null || echo "  Grafana repo already exists"
+
 echo -n "  Updating Helm repositories..."
 helm repo update > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}"
 
 echo ""
-echo -e "${BLUE}Step 2/4: Installing Kafka with Strimzi (this may take 3-5 minutes)${NC}"
+echo -e "${BLUE}Step 2/6: Installing Kafka with Strimzi (this may take 3-5 minutes)${NC}"
 echo "  - Using Strimzi Kafka Operator (production-ready)"
 echo "  - 1 broker, 3 partitions"
 echo "  - PLAINTEXT protocol (no auth)"
@@ -115,7 +123,7 @@ echo -n "  Waiting for Kafka cluster to be ready (may take 2-3 minutes)..."
 kubectl wait kafka/kafka --for=condition=Ready --timeout=600s -n kafka > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
 
 echo ""
-echo -e "${BLUE}Step 3/4: Installing MongoDB with Community Operator (this may take 2-3 minutes)${NC}"
+echo -e "${BLUE}Step 3/6: Installing MongoDB with Community Operator (this may take 2-3 minutes)${NC}"
 echo "  - Using MongoDB Community Operator (official)"
 echo "  - Standalone replica set (1 member)"
 echo "  - No authentication (dev mode)"
@@ -138,7 +146,7 @@ echo -n "  Waiting for MongoDB cluster to be ready (may take 2-3 minutes)..."
 kubectl wait mongodbcommunity/mongodb --for=jsonpath='{.status.phase}'=Running --timeout=600s -n mongodb > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
 
 echo ""
-echo -e "${BLUE}Step 4/4: Installing KEDA (this may take 1-2 minutes)${NC}"
+echo -e "${BLUE}Step 4/6: Installing KEDA (this may take 1-2 minutes)${NC}"
 echo "  - Event-driven autoscaling operator"
 echo ""
 
@@ -151,6 +159,61 @@ run_with_spinner "  Installing KEDA chart..." \
 
 echo -n "  Waiting for KEDA pods to be ready..."
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/part-of=keda-operator -n keda --timeout=300s > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
+
+echo ""
+echo -e "${BLUE}Step 5/6: Installing Prometheus (this may take 2-3 minutes)${NC}"
+echo "  - Prometheus Operator with CRDs"
+echo "  - Node exporter for node metrics"
+echo "  - Kube-state-metrics for cluster metrics"
+echo ""
+
+run_with_spinner "  Installing Prometheus stack..." \
+    helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+        --namespace monitoring \
+        --create-namespace \
+        --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
+        --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false \
+        --set grafana.enabled=false \
+        --set alertmanager.enabled=false \
+        --wait \
+        --timeout 10m
+
+echo -n "  Waiting for Prometheus pods to be ready..."
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=300s > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
+
+echo -n "  Applying Prometheus ServiceMonitors..."
+kubectl apply -f infrastructure/prometheus.yaml > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
+
+echo ""
+echo -e "${BLUE}Step 6/6: Installing Grafana (this may take 1-2 minutes)${NC}"
+echo "  - Grafana for visualization"
+echo "  - Pre-configured dashboards"
+echo "  - Prometheus datasource"
+echo ""
+
+run_with_spinner "  Installing Grafana chart..." \
+    helm upgrade --install grafana grafana/grafana \
+        --namespace monitoring \
+        --set persistence.enabled=true \
+        --set persistence.size=5Gi \
+        --set adminPassword=admin \
+        --set datasources."datasources\.yaml".apiVersion=1 \
+        --set datasources."datasources\.yaml".datasources[0].name=Prometheus \
+        --set datasources."datasources\.yaml".datasources[0].type=prometheus \
+        --set datasources."datasources\.yaml".datasources[0].url=http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090 \
+        --set datasources."datasources\.yaml".datasources[0].isDefault=true \
+        --set datasources."datasources\.yaml".datasources[0].access=proxy \
+        --set sidecar.dashboards.enabled=true \
+        --set sidecar.dashboards.label=grafana_dashboard \
+        --set sidecar.dashboards.searchNamespace=monitoring \
+        --wait \
+        --timeout 10m
+
+echo -n "  Waiting for Grafana pod to be ready..."
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=grafana -n monitoring --timeout=300s > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
+
+echo -n "  Applying Grafana dashboards..."
+kubectl apply -f infrastructure/grafana-dashboards.yaml > /dev/null 2>&1 && echo -e " ${GREEN}✓${NC}" || echo -e " ${YELLOW}⚠${NC}"
 
 echo ""
 echo "=========================================="
@@ -168,6 +231,10 @@ echo ""
 
 echo -e "${BLUE}KEDA pods:${NC}"
 kubectl get pods -n keda
+echo ""
+
+echo -e "${BLUE}Monitoring pods:${NC}"
+kubectl get pods -n monitoring
 
 echo ""
 echo "=========================================="
@@ -177,34 +244,53 @@ echo "=========================================="
 KAFKA_STATUS=$(kubectl get pod kafka-kafka-0 -n kafka -o jsonpath='{.status.phase}' 2>/dev/null || echo "Not Found")
 MONGODB_STATUS=$(kubectl get pod mongodb-0 -n mongodb -o jsonpath='{.status.phase}' 2>/dev/null || echo "Not Found")
 KEDA_STATUS=$(kubectl get pods -n keda -l app.kubernetes.io/name=keda-operator -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+PROMETHEUS_STATUS=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=prometheus -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+GRAFANA_STATUS=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=grafana -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 
 if [ "$KAFKA_STATUS" = "Running" ]; then
-    echo -e "${GREEN}✓${NC} Kafka:   $KAFKA_STATUS"
+    echo -e "${GREEN}✓${NC} Kafka:      $KAFKA_STATUS"
 else
-    echo -e "${YELLOW}⚠${NC} Kafka:   $KAFKA_STATUS"
+    echo -e "${YELLOW}⚠${NC} Kafka:      $KAFKA_STATUS"
 fi
 
 if [ "$MONGODB_STATUS" = "Running" ]; then
-    echo -e "${GREEN}✓${NC} MongoDB: $MONGODB_STATUS"
+    echo -e "${GREEN}✓${NC} MongoDB:    $MONGODB_STATUS"
 else
-    echo -e "${YELLOW}⚠${NC} MongoDB: $MONGODB_STATUS"
+    echo -e "${YELLOW}⚠${NC} MongoDB:    $MONGODB_STATUS"
 fi
 
 if [ "$KEDA_STATUS" = "Running" ]; then
-    echo -e "${GREEN}✓${NC} KEDA:    $KEDA_STATUS"
+    echo -e "${GREEN}✓${NC} KEDA:       $KEDA_STATUS"
 else
-    echo -e "${YELLOW}⚠${NC} KEDA:    $KEDA_STATUS"
+    echo -e "${YELLOW}⚠${NC} KEDA:       $KEDA_STATUS"
+fi
+
+if [ "$PROMETHEUS_STATUS" = "Running" ]; then
+    echo -e "${GREEN}✓${NC} Prometheus: $PROMETHEUS_STATUS"
+else
+    echo -e "${YELLOW}⚠${NC} Prometheus: $PROMETHEUS_STATUS"
+fi
+
+if [ "$GRAFANA_STATUS" = "Running" ]; then
+    echo -e "${GREEN}✓${NC} Grafana:    $GRAFANA_STATUS"
+else
+    echo -e "${YELLOW}⚠${NC} Grafana:    $GRAFANA_STATUS"
 fi
 
 echo ""
-if [ "$KAFKA_STATUS" = "Running" ] && [ "$MONGODB_STATUS" = "Running" ] && [ "$KEDA_STATUS" = "Running" ]; then
+if [ "$KAFKA_STATUS" = "Running" ] && [ "$MONGODB_STATUS" = "Running" ] && [ "$KEDA_STATUS" = "Running" ] && [ "$PROMETHEUS_STATUS" = "Running" ] && [ "$GRAFANA_STATUS" = "Running" ]; then
     echo "=========================================="
     echo -e "${GREEN}✅ All dependencies installed successfully!${NC}"
     echo "=========================================="
     echo ""
     echo "Connection details:"
-    echo "  Kafka:   kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
-    echo "  MongoDB: mongodb-0.mongodb-svc.mongodb.svc.cluster.local:27017"
+    echo "  Kafka:      kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+    echo "  MongoDB:    mongodb-0.mongodb-svc.mongodb.svc.cluster.local:27017"
+    echo "  Prometheus: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090"
+    echo ""
+    echo "Access Grafana:"
+    echo "  kubectl port-forward -n monitoring svc/grafana 3000:80"
+    echo "  Open http://localhost:3000 (admin/admin)"
     echo ""
     echo "Next step: Build and deploy the application"
     echo "  ./scripts/03_build-and-deploy-local.sh"
@@ -219,6 +305,8 @@ else
     echo "Wait a minute and check again, or review logs:"
     echo "  kubectl logs -n kafka kafka-kafka-0"
     echo "  kubectl logs -n mongodb mongodb-0"
+    echo "  kubectl logs -n monitoring -l app.kubernetes.io/name=prometheus"
+    echo "  kubectl logs -n monitoring -l app.kubernetes.io/name=grafana"
 fi
 
 echo ""
