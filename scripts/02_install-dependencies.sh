@@ -14,6 +14,8 @@
 # Configuration files are in infrastructure/ directory:
 # - infrastructure/kafka.yaml (Strimzi Kafka with KRaft)
 # - infrastructure/mongodb.yaml (MongoDB Community Operator)
+# - infrastructure/prometheus.yaml (Prometheus ServiceMonitors)
+# - infrastructure/grafana-dashboards.yaml (Grafana dashboards)
 
 set -e
 
@@ -232,15 +234,15 @@ PROMETHEUS_STATUS=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=pro
 GRAFANA_STATUS=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=grafana -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 
 if [ "$KAFKA_STATUS" = "Running" ]; then
-    echo -e "${GREEN}✓${NC} Kafka:   $KAFKA_STATUS"
+    echo -e "${GREEN}✓${NC} Kafka:      $KAFKA_STATUS"
 else
-    echo -e "${YELLOW}⚠${NC} Kafka:   $KAFKA_STATUS"
+    echo -e "${YELLOW}⚠${NC} Kafka:      $KAFKA_STATUS"
 fi
 
 if [ "$MONGODB_STATUS" = "Running" ]; then
-    echo -e "${GREEN}✓${NC} MongoDB: $MONGODB_STATUS"
+    echo -e "${GREEN}✓${NC} MongoDB:    $MONGODB_STATUS"
 else
-    echo -e "${YELLOW}⚠${NC} MongoDB: $MONGODB_STATUS"
+    echo -e "${YELLOW}⚠${NC} MongoDB:    $MONGODB_STATUS"
 fi
 
 if [ "$KEDA_STATUS" = "Running" ]; then
@@ -290,6 +292,8 @@ else
     echo "Wait a minute and check again, or review logs:"
     echo "  kubectl logs -n kafka kafka-kafka-0"
     echo "  kubectl logs -n mongodb mongodb-0"
+    echo "  kubectl logs -n monitoring -l app.kubernetes.io/name=prometheus"
+    echo "  kubectl logs -n monitoring -l app.kubernetes.io/name=grafana"
 fi
 
 echo ""

@@ -287,6 +287,28 @@ kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 909
 - **Resource Quotas**: Separate resource limits per namespace
 - **Monitoring**: Easier to track resource usage per layer
 
+### Why Prometheus + Grafana Stack?
+
+**Prometheus Advantages:**
+- Industry-standard for Kubernetes monitoring
+- Pull-based metrics collection (ServiceMonitors)
+- PromQL for powerful queries and alerting
+- Native Kubernetes integration via Operator
+- Includes kube-state-metrics and node-exporter for comprehensive cluster monitoring
+
+**Grafana Advantages:**
+- Rich visualization capabilities
+- Dashboard as code (ConfigMaps)
+- Multiple datasource support
+- Community dashboards available
+- Alert visualization and management
+
+**kube-prometheus-stack Benefits:**
+- Bundles Prometheus Operator, Prometheus, node-exporter, kube-state-metrics
+- Production-ready configuration out-of-the-box
+- CRDs for ServiceMonitors and PrometheusRules
+- Regular updates and active community
+
 ---
 
 ## Security Notes
